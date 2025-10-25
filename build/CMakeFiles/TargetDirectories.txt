@@ -1,0 +1,5 @@
+/home/enovo/mytty/mytty_qt66/build/CMakeFiles/mytty.dir
+/home/enovo/mytty/mytty_qt66/build/CMakeFiles/edit_cache.dir
+/home/enovo/mytty/mytty_qt66/build/CMakeFiles/rebuild_cache.dir
+/home/enovo/mytty/mytty_qt66/build/CMakeFiles/mytty_autogen_timestamp_deps.dir
+/home/enovo/mytty/mytty_qt66/build/CMakeFiles/mytty_autogen.dir
