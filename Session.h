@@ -1,107 +1,90 @@
-/*
-    Headless session wrapper extracted from QTermWidget's Session class.
-    Preserves the original process/PTY management logic while omitting the
-    GUI specific pieces such as TerminalDisplay wiring.
-*/
+#ifndef SESSION_H
+#define SESSION_H
 
-#ifndef KONSOLE_HEADLESS_SESSION_H
-#define KONSOLE_HEADLESS_SESSION_H
-
-#include <QObject>
-#include <QProcess>
-#include <QStringList>
-#include <QTimer>
-#include <QSize>
+#include <stdbool.h>
+#include <stddef.h>
+#include <sys/types.h>
 
 #include "Pty.h"
 
-namespace Konsole {
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-class Session : public QObject
-{
-    Q_OBJECT
+typedef struct Session Session;
 
-public:
-    explicit Session(QObject* parent = nullptr);
-    ~Session() override;
+typedef void (*SessionDataCallback)(const char *data, size_t length, void *user_data);
+typedef void (*SessionFinishedCallback)(int exit_code, void *user_data);
 
-    // Session identity -----------------------------------------------------
-    int sessionId() const;
-    int processId() const;
+typedef struct SessionCallbacks {
+    SessionDataCallback data;
+    SessionFinishedCallback finished;
+    void *data_user_data;
+    void *finished_user_data;
+} SessionCallbacks;
 
-    // Command configuration ------------------------------------------------
-    void setProgram(const QString& program);
-    void setArguments(const QStringList& arguments);
-    void setInitialWorkingDirectory(const QString& dir);
-    void setEnvironment(const QStringList& environment);
-    QString program() const;
-    QStringList arguments() const;
-    QString initialWorkingDirectory() const;
-    QStringList environment() const;
+struct Session {
+    Pty pty;
+    char *program;
+    char **arguments;
+    size_t argument_count;
+    char **environment;
+    size_t environment_count;
+    char *initial_working_dir;
 
-    // Runtime control ------------------------------------------------------
-    void setAddToUtmp(bool enabled);
-    bool addToUtmp() const;
-    void setFlowControlEnabled(bool enabled);
-    bool flowControlEnabled() const;
-    void setMonitorActivity(bool monitor);
-    void setMonitorSilence(bool monitor);
-    void setSilenceSeconds(int seconds);
-    void setAutoClose(bool enabled);
-    bool autoClose() const;
+    bool add_to_utmp;
+    bool flow_control;
+    bool auto_close;
+    bool monitor_activity;
+    bool monitor_silence;
+    bool notified_activity;
+    int silence_seconds;
 
-    void setSize(const QSize& size);
-    QSize size() const;
+    int reported_columns;
+    int reported_rows;
 
-    bool isRunning() const;
-    void run();
-    void close();
+    int session_id;
 
-    // I/O ------------------------------------------------------------------
-    void sendText(const QString& text);
-    void sendBytes(const QByteArray& bytes);
-
-signals:
-    void receivedData(const QString& text);
-    void rawDataReceived(const QByteArray& data);
-    void finished();
-    void finishedWithCode(int exitCode);
-    void silenceDetected();
-    void activityDetected();
-    void flowControlStateChanged(bool enabled);
-
-private slots:
-    void handlePtyData(const char* data, int length);
-    void handleProcessFinished(int exitCode, QProcess::ExitStatus status);
-    void monitorTimerDone();
-
-private:
-    void restartSilenceTimer();
-    void ensureProcess();
-    void applyProcessEnvironment();
-    QString resolveProgram() const;
-
-    static int s_lastSessionId;
-
-    Pty* m_shellProcess;
-    QSize m_reportedSize;
-    QString m_program;
-    QStringList m_arguments;
-    QStringList m_environment;
-    QString m_initialWorkingDir;
-
-    bool m_addToUtmp;
-    bool m_flowControl;
-    bool m_autoClose;
-    bool m_monitorActivity;
-    bool m_monitorSilence;
-    bool m_notifiedActivity;
-    int m_silenceSeconds;
-
-    QTimer* m_monitorTimer;
-    int m_sessionId;
+    SessionCallbacks callbacks;
 };
 
-} // namespace Konsole
+void session_init(Session *session);
+void session_destroy(Session *session);
 
-#endif // KONSOLE_HEADLESS_SESSION_H
+int session_session_id(const Session *session);
+pid_t session_process_id(const Session *session);
+
+void session_set_program(Session *session, const char *program);
+void session_set_arguments(Session *session, char *const *arguments, size_t count);
+void session_set_initial_working_directory(Session *session, const char *directory);
+void session_set_environment(Session *session, char *const *environment, size_t count);
+
+const char *session_program(const Session *session);
+char **session_arguments(const Session *session, size_t *count);
+const char *session_initial_working_directory(const Session *session);
+char **session_environment(const Session *session, size_t *count);
+
+void session_set_add_to_utmp(Session *session, bool enabled);
+bool session_add_to_utmp(const Session *session);
+void session_set_flow_control_enabled(Session *session, bool enabled);
+bool session_flow_control_enabled(Session *session);
+void session_set_auto_close(Session *session, bool enabled);
+bool session_auto_close(const Session *session);
+
+void session_set_size(Session *session, int columns, int rows);
+void session_set_callbacks(Session *session, const SessionCallbacks *callbacks);
+
+bool session_is_running(const Session *session);
+int session_run(Session *session);
+void session_close(Session *session);
+
+void session_send_text(Session *session, const char *text);
+void session_send_bytes(Session *session, const char *bytes, size_t length);
+
+int session_poll(Session *session, int timeout_ms);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* SESSION_H */

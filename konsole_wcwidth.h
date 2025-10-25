@@ -1,20 +1,18 @@
-/* $XFree86: xc/programs/xterm/wcwidth.h,v 1.2 2001/06/18 19:09:27 dickey Exp $ */
+#ifndef KONSOLE_WCWIDTH_H
+#define KONSOLE_WCWIDTH_H
 
-/* Markus Kuhn -- 2001-01-12 -- public domain */
-/* Adaptations for KDE by Waldo Bastian <bastian@kde.org> */
-/*
-    Rewritten for QT4 by e_k <e_k at users.sourceforge.net>
-*/
+#include <stddef.h>
+#include <wchar.h>
 
-
-#ifndef _KONSOLE_WCWIDTH_H_
-#define _KONSOLE_WCWIDTH_H_
-
-// Standard
-#include <string>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 int konsole_wcwidth(wchar_t ucs);
+int string_width(const wchar_t *wstr);
 
-int string_width( const std::wstring & wstr );
-
+#ifdef __cplusplus
+}
 #endif
+
+#endif /* KONSOLE_WCWIDTH_H */
