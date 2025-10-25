@@ -6,6 +6,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 add_executable(mytty
     mytty.c
+    nssh.c
     Pty.c
     Session.c
     ShellCommand.c

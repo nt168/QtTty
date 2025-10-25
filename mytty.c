@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "Session.h"
+#include "nssh.h"
 
 static volatile sig_atomic_t g_resize_requested = 0;
 
@@ -64,8 +65,13 @@ static int copy_environment(Session *session)
 
 int main(int argc, char **argv)
 {
+    if (argc > 1 && (strcmp(argv[1], "-ssh") == 0 || strcmp(argv[1], "ssh") == 0)) {
+        return nssh_main(argc, argv);
+    }
+
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <program> [args...]\n", argv[0]);
+        fprintf(stderr, "       %s -ssh <host> <user> <password> [-t] [command ...]\n", argv[0]);
         return EXIT_FAILURE;
     }
 
