@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -32,6 +33,52 @@ typedef struct NsshContext {
 } NsshContext;
 
 static volatile sig_atomic_t g_resize_requested = 0;
+static struct termios g_original_termios;
+static bool g_termios_saved = false;
+static int g_tty_fd = -1;
+
+static void nssh_restore_terminal_mode(void)
+{
+    if (g_termios_saved) {
+        int fd = g_tty_fd >= 0 ? g_tty_fd : STDIN_FILENO;
+        tcsetattr(fd, TCSANOW, &g_original_termios);
+        g_termios_saved = false;
+    }
+    if (g_tty_fd >= 0 && g_tty_fd != STDIN_FILENO) {
+        close(g_tty_fd);
+    }
+    g_tty_fd = -1;
+}
+
+static void nssh_enable_raw_terminal_mode(void)
+{
+    int fd = STDIN_FILENO;
+    if (!isatty(fd)) {
+        fd = open("/dev/tty", O_RDWR | O_CLOEXEC);
+        if (fd < 0) {
+            return;
+        }
+    }
+    g_tty_fd = fd;
+
+    struct termios tio;
+    if (tcgetattr(fd, &tio) != 0) {
+        if (fd != STDIN_FILENO) {
+            close(fd);
+        }
+        g_tty_fd = -1;
+        return;
+    }
+
+    g_original_termios = tio;
+    g_termios_saved = true;
+    cfmakeraw(&tio);
+#ifdef IUTF8
+    tio.c_iflag |= IUTF8;
+#endif
+    tcsetattr(fd, TCSANOW, &tio);
+    atexit(nssh_restore_terminal_mode);
+}
 
 static void nssh_apply_terminal_size(Session *session)
 {
@@ -348,10 +395,12 @@ int nssh_main(int argc, char **argv)
 
         signal(SIGWINCH, nssh_handle_window_resize);
         nssh_apply_terminal_size(&session);
+        nssh_enable_raw_terminal_mode();
 
         if (session_run(&session) != 0) {
             fprintf(stderr, "Failed to start ssh session for %s@%s\n", user, host);
             session_destroy(&session);
+            nssh_restore_terminal_mode();
             free(user_host);
             free(ssh_arguments);
             break;
@@ -365,15 +414,17 @@ int nssh_main(int argc, char **argv)
                 nssh_apply_terminal_size(&session);
             }
 
+            int input_fd = g_tty_fd >= 0 ? g_tty_fd : STDIN_FILENO;
+
             fd_set read_fds;
             FD_ZERO(&read_fds);
-            FD_SET(STDIN_FILENO, &read_fds);
+            FD_SET(input_fd, &read_fds);
 
             struct timeval timeout;
             timeout.tv_sec = 0;
             timeout.tv_usec = 100000;
 
-            int ready = select(STDIN_FILENO + 1, &read_fds, NULL, NULL, &timeout);
+            int ready = select(input_fd + 1, &read_fds, NULL, NULL, &timeout);
             if (ready < 0) {
                 if (errno == EINTR) {
                     continue;
@@ -381,9 +432,9 @@ int nssh_main(int argc, char **argv)
                 break;
             }
 
-            if (ready > 0 && FD_ISSET(STDIN_FILENO, &read_fds)) {
+            if (ready > 0 && FD_ISSET(input_fd, &read_fds)) {
                 char buffer[4096];
-                ssize_t bytes_read = read(STDIN_FILENO, buffer, sizeof(buffer));
+                ssize_t bytes_read = read(input_fd, buffer, sizeof(buffer));
                 if (bytes_read > 0) {
                     session_send_bytes(&session, buffer, (size_t)bytes_read);
                 }
@@ -395,6 +446,7 @@ int nssh_main(int argc, char **argv)
         session_poll(&session, 0);
 
         session_destroy(&session);
+        nssh_restore_terminal_mode();
         free(user_host);
         free(ssh_arguments);
 
