@@ -13,6 +13,35 @@
 #include "nssh.h"
 
 static volatile sig_atomic_t g_resize_requested = 0;
+static struct termios g_original_termios;
+static bool g_termios_saved = false;
+
+static void restore_terminal_mode(void)
+{
+    if (g_termios_saved) {
+        tcsetattr(STDIN_FILENO, TCSANOW, &g_original_termios);
+        g_termios_saved = false;
+    }
+}
+
+static void enable_raw_terminal_mode(void)
+{
+    if (!isatty(STDIN_FILENO)) {
+        return;
+    }
+    struct termios tio;
+    if (tcgetattr(STDIN_FILENO, &tio) != 0) {
+        return;
+    }
+    g_original_termios = tio;
+    g_termios_saved = true;
+    cfmakeraw(&tio);
+#ifdef IUTF8
+    tio.c_iflag |= IUTF8;
+#endif
+    tcsetattr(STDIN_FILENO, TCSANOW, &tio);
+    atexit(restore_terminal_mode);
+}
 
 static void apply_terminal_size(Session *session)
 {
@@ -96,9 +125,12 @@ int main(int argc, char **argv)
     signal(SIGWINCH, handle_window_resize);
     apply_terminal_size(&session);
 
+    enable_raw_terminal_mode();
+
     if (session_run(&session) != 0) {
         fprintf(stderr, "Failed to start program: %s\n", argv[1]);
         session_destroy(&session);
+        restore_terminal_mode();
         return EXIT_FAILURE;
     }
 
@@ -143,6 +175,7 @@ int main(int argc, char **argv)
     session_poll(&session, 0);
 
     session_destroy(&session);
+    restore_terminal_mode();
 
     return exit_status;
 }
